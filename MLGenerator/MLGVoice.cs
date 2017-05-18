@@ -11,9 +11,37 @@ using System.Threading.Tasks;
 
 namespace MLGenerator
 {
+	public static class TextProcessor
+	{
+		public static List<string> Process(string input)
+		{
+			List<string> lstErg = new List<string>();
+			List<string> tmpLst = new List<string>();
+
+			int totChars = 0;
+			foreach (var item in input.Split(' '))
+			{
+				if (totChars + item.Length >= 300)
+				{
+					Debug.WriteLine("Requesting chunk " + totChars);
+					var strReq = string.Join(" ", tmpLst.ToArray());
+					lstErg.Add(strReq);
+
+					totChars = 0;
+					tmpLst.Clear();
+				}
+
+				tmpLst.Add(item);
+				totChars += item.Length + 1;//+1 wg space
+			}
+			return lstErg;
+		}
+	}
+
 	internal class MLGVoice
 	{
 		private CookieContainer cc;
+		private Regex rgxMp3 = new Regex(@"'(http:\/\/.*?)'", RegexOptions.ECMAScript | RegexOptions.Compiled);
 
 		public MLGVoice()
 		{
@@ -26,42 +54,23 @@ namespace MLGenerator
 			}
 		}
 
-		private Regex rgxMp3 = new Regex(@"'(http:\/\/.*?)'", RegexOptions.ECMAScript | RegexOptions.Compiled);
+		public async Task<string> ResolveLinkAsync(string textToSpeak)
+		{
+			var res = await PostAsyncTask(textToSpeak);
+			if (rgxMp3.IsMatch(res))
+			{
+				return rgxMp3.Match(res).Groups[1].Value;
+			}
+			else
+			{
+				return null;
+			}
+		}
 
 		public string[] process(string input)
 		{
-			var tskAll = new List<Task<string>>();
-
-			List<string> lstErg = new List<string>();
-			List<string> tmpLst = new List<string>();
-			int totChars = 0;
-			foreach (var item in input.Split(' '))
-			{
-				if (totChars + item.Length >= 300)
-				{
-					Debug.WriteLine("Requesting chunk " + totChars);
-					var strReq = string.Join(" ", tmpLst.ToArray());
-					tskAll.Add(Task.Run<string>(() =>
-					{ return GetMp3(strReq); }
-					));
-
-					totChars = 0;
-					tmpLst.Clear();
-				}
-
-				tmpLst.Add(item);
-				totChars += item.Length + 1;//+1 wg space
-			}
-			_all = tmpLst.Count;
-			if (tmpLst.Count != 0)
-			{
-				//lstErg.Add(GetMp3(string.Join(" ", tmpLst.ToArray())));
-				var strReq = string.Join(" ", tmpLst.ToArray());
-				tskAll.Add(Task.Run<string>(() =>
-				{
-					return GetMp3(strReq);
-				}));
-			}
+			var allTxt = TextProcessor.Process(input);
+			var tskAll = allTxt.Select(m => Task.Run<string>(() => GetMp3(m))).ToList();
 
 			Task.WaitAll(tskAll.ToArray());
 
@@ -88,11 +97,38 @@ namespace MLGenerator
 			}
 		}
 
+		private async Task<string> PostAsyncTask(string input)
+		{
+			var url = @"http://dmbx.acapela-group.com/DemoHTML5Form_V2.php?langdemo=Powered+by+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-vaas.com%22%3EAcapela+Voice+as+a+Service%3C%2Fa%3E.+For+demo+and+evaluation+purpose+only%2C+for+commercial+use+of+generated+sound+files+please+go+to+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-box.com%22%3Ewww.acapela-box.com%3C%2Fa%3E";
+
+			var contenta = @"MyLanguages=sonid10" +
+				"&0=Leila&1=Laia&2=Eliska&3=Mette&4=Zoe&5=Jasmijn&6=Tyler&7=Deepa&8=Rhona&9=Rachel&MySelectedVoice=Ryan&11=Hanna&12=Sanna&13=Manon-be&14=Louise&15=Manon&16=Claudia&17=Dimitris&18=Fabiana&19=Sakura&20=Minji&21=Lulu&22=Bente&23=Monika&24=Marcia&25=Celia&26=Alyona&27=Biera&28=Ines&29=Rodrigo&30=Elin&31=Samuel&32=Kal&33=Mia&34=Ipek" + "" +
+				"&MyTextForTTS=" + input + "&agreeterms=on&t=1&SendToVaaS=";
+
+			var request = (HttpWebRequest)WebRequest.Create(url);
+
+			request.CookieContainer = cc;
+			request.Proxy = null;
+
+			var data = Encoding.ASCII.GetBytes(contenta);
+
+			request.Method = "POST";
+			request.ContentType = "application/x-www-form-urlencoded";
+			request.ContentLength = data.Length;
+
+			using (var stream = await request.GetRequestStreamAsync())
+			{
+				stream.Write(data, 0, data.Length);
+			}
+
+			var response =  await (request.GetResponseAsync());
+
+			return await (new StreamReader(response.GetResponseStream())).ReadToEndAsync();
+		}
+
 		private string PostIt(string input)
 		{
-			//http://dmbx.acapela-group.com/DemoHTML5Form_V2.php?langdemo=Powered+by+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-vaas.com%22%3EAcapela+Voice+as+a+Service%3C%2Fa%3E.+For+demo+and+evaluation+purpose+only%2C+for+commercial+use+of+generated+sound+files+please+go+to+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-box.com%22%3Ewww.acapela-box.com%3C%2Fa%3E
 			var url = @"http://dmbx.acapela-group.com/DemoHTML5Form_V2.php?langdemo=Powered+by+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-vaas.com%22%3EAcapela+Voice+as+a+Service%3C%2Fa%3E.+For+demo+and+evaluation+purpose+only%2C+for+commercial+use+of+generated+sound+files+please+go+to+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-box.com%22%3Ewww.acapela-box.com%3C%2Fa%3E";
-			//var url = @"http://www.acapela-group.com/demo-tts/DemoHTML5Form_V2.php?langdemo=Powered+by+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-vaas.com%22%3EAcapela+Voice+as+a+Service%3C%2Fa%3E.+For+demo+and+evaluation+purpose+only%2C+for+commercial+use+of+generated+sound+files+please+go+to+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-box.com%22%3Ewww.acapela-box.com%3C%2Fa%3E";
 
 			var contenta = @"MyLanguages=sonid10" +
 				"&0=Leila&1=Laia&2=Eliska&3=Mette&4=Zoe&5=Jasmijn&6=Tyler&7=Deepa&8=Rhona&9=Rachel&MySelectedVoice=Ryan&11=Hanna&12=Sanna&13=Manon-be&14=Louise&15=Manon&16=Claudia&17=Dimitris&18=Fabiana&19=Sakura&20=Minji&21=Lulu&22=Bente&23=Monika&24=Marcia&25=Celia&26=Alyona&27=Biera&28=Ines&29=Rodrigo&30=Elin&31=Samuel&32=Kal&33=Mia&34=Ipek" + "" +
@@ -117,19 +153,6 @@ namespace MLGenerator
 			var response = (HttpWebResponse)request.GetResponse();
 
 			return new StreamReader(response.GetResponseStream()).ReadToEnd();
-
-			//  CookieWebClient wc = new CookieWebClient();
-			//wc.Proxy = null;
-			//wc.DownloadString("http://www.acapela-group.com/");
-			//var url = @"http://www.acapela-group.com/demo-tts/DemoHTML5Form_V2.php?langdemo=Powered+by+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-vaas.com%22%3EAcapela+Voice+as+a+Service%3C%2Fa%3E.+For+demo+and+evaluation+purpose+only%2C+for+commercial+use+of+generated+sound+files+please+go+to+%3Ca+href%3D%22http%3A%2F%2Fwww.acapela-box.com%22%3Ewww.acapela-box.com%3C%2Fa%3E";
-
-			//var contenta = @"MyLanguages=sonid10" +
-			//    "&0=Leila&1=Laia&2=Eliska&3=Mette&4=Zoe&5=Jasmijn&6=Tyler&7=Deepa&8=Rhona&9=Rachel&MySelectedVoice=Ryan&11=Hanna&12=Sanna&13=Manon-be&14=Louise&15=Manon&16=Claudia&17=Dimitris&18=Fabiana&19=Sakura&20=Minji&21=Lulu&22=Bente&23=Monika&24=Marcia&25=Celia&26=Alyona&27=Biera&28=Ines&29=Rodrigo&30=Elin&31=Samuel&32=Kal&33=Mia&34=Ipek" + "" +
-			//    "&MyTextForTTS=sssdd&agreeterms=on&t=1&SendToVaaS=";
-
-			//string HtmlResult = wc.UploadString(url, contenta);
-
-			//return HtmlResult;
 		}
 	}
 
@@ -161,9 +184,9 @@ namespace MLGenerator
 		protected override WebRequest GetWebRequest(Uri address)
 		{
 			WebRequest r = base.GetWebRequest(address);
-			if (r is HttpWebRequest request)
+			if (r is HttpWebRequest)
 			{
-				request.CookieContainer = container;
+				((HttpWebRequest)r).CookieContainer = container;
 			}
 			return r;
 		}

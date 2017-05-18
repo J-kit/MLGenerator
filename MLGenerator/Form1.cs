@@ -27,6 +27,28 @@ namespace MLGenerator
 
 		private MLGVoice mgv;
 
+		private async void button2_Click(object sender, EventArgs e)
+		{
+			var links = new List<string>();
+			var parts = TextProcessor.Process(textBox1.Text);
+			foreach (var part in parts)
+			{
+				links.Add(await mgv.ResolveLinkAsync(part));
+
+				var wc = new WebClient() { Proxy = null };
+				wc.DownloadProgressChanged += (a, x) =>
+				{
+
+				};
+				wc.DownloadFileCompleted += (a, x) =>
+				{
+
+				};
+			}
+			//Wait for all downloads to finish
+			//Combine
+			//etc etc
+		}
 		private void button1_ClickAsync(object sender, EventArgs e)
         {
             var text = textBox1.Text;
@@ -109,5 +131,7 @@ namespace MLGenerator
                     num++;
             } while (true);
         }
-    }
+
+	
+	}
 }
