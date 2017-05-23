@@ -35,25 +35,30 @@ namespace MLGenerator
 			Directory.CreateDirectory("finished");
 
 			var downloadContainer = new List<DownloadInfo>();
-			var parts = TextProcessor.Process(textBox1.Text);
+			var parts = TextProcessor.GetSentences(textBox1.Text);
+
 			Task[] dlTaskList = new Task[parts.Count];
+
 			for (int i = 0; i < parts.Count; i++)
 			{
-				Text = $"Resolving part {i} of {parts.Count}";
+				if (string.IsNullOrEmpty(parts[i]))
+					continue;
 
-				var audioLink = await mgv.ResolveLinkAsync(parts[i]);
+				Text = $"Resolving part {i} of {parts.Count}";
+				string audioLink = null;
+				while (audioLink == null)
+				{
+					audioLink = await mgv.ResolveLinkAsync(parts[i]);
+					if (audioLink == null)
+					{
+						Debug.WriteLine($"Resolve for {i} failed, retrying...");
+					}
+				}
+
 				var audioLocation = getnext(@"temp\output", "mp3");
 				var wc = new CustomWebClient() { Proxy = null };
 
-				//wc.DownloadProgressChanged += (a, x) =>
-				//{
 
-				//};
-
-				//wc.DownloadFileCompleted += (a, x) =>
-				//{
-
-				//};
 				var dlInfo = new DownloadInfo()
 				{
 					Downloader = wc,
@@ -72,65 +77,24 @@ namespace MLGenerator
 			//Combine
 			//etc etc
 			Text = $"Waiting for {dlTaskList.Length} download Tasks";
-			Task.WaitAll(dlTaskList);
+			foreach (var item in dlTaskList)
+			{
+				if (item != null)
+					await item;
+			}
 			Text = $"Combining...";
 			using (FileStream fs = File.Create(getnext(@"finished\output", "mp3")))
 			{
-				Combine(downloadContainer.Select(m=>m.Location), fs);
+				Combine(downloadContainer.Select(m => m.Location), fs);
+			}
+			Text = $"Cleanup";
+
+			foreach (var item in downloadContainer)
+			{
+				if (item != null && File.Exists(item.Location))
+					File.Delete(item.Location);
 			}
 			Text = $"Ready";
-		}
-		private void button1_ClickAsync(object sender, EventArgs e)
-		{
-			var text = textBox1.Text;
-
-			Thread th = new Thread(() =>
-			{
-				Directory.CreateDirectory("temp");
-				Directory.CreateDirectory("finished");
-				List<string> ToConCat = new List<string>();
-
-				Action<string> uptAct = new Action<string>((a) =>
-				{
-					this.Text = a;
-				});
-				this.Invoke(uptAct, "Resolving mp3 files");
-
-				var eg = mgv.process(text);
-				var dlProc = new List<Task>();
-
-				this.Invoke(uptAct, "Starting download (" + eg.Length + ")");
-				foreach (var item in eg)
-				{
-					var curi = new Uri(item);
-					var nextFil = getnext(@"temp\output", "mp3");
-					File.WriteAllText(nextFil, "");
-					ToConCat.Add(nextFil);
-					var wc = new WebClient();
-					wc.Proxy = null;
-
-					dlProc.Add(Task.Run(() =>
-					{
-						wc.DownloadFile(curi, nextFil);
-					}));
-				}
-				this.Invoke(uptAct, "Waiting for downloads to finish (" + eg.Length + ")");
-				Task.WaitAll(dlProc.ToArray());
-				this.Invoke(uptAct, "Combine files");
-				using (FileStream fs = File.Create(getnext(@"finished\output", "mp3")))
-				{
-					Combine(ToConCat.ToArray(), fs);
-				}
-				this.Invoke(uptAct, "Finished");
-				foreach (var item in ToConCat)
-				{
-					File.Delete(item);
-				}
-				MessageBox.Show("Finished!");
-			});
-			th.Name = "ResolverThread";
-			th.IsBackground = true;
-			th.Start();
 		}
 
 		public static void Combine(IEnumerable<string> inputFiles, Stream output)
